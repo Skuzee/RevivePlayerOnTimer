@@ -33,7 +33,7 @@ namespace RevivePlayerOnTimer
     {
         public static ConfigEntry<int>? deathTimerLength;
         private readonly Harmony harmony = new Harmony("Angst-RevivePlayerOnTimer");
-        private static RevivePlayerOnTimer? Instance;
+        public static RevivePlayerOnTimer? Instance;
         public ManualLogSource? mls;
         public static Dictionary<ulong, PlayerStatus> playerStatusDictionary;
 
@@ -81,6 +81,7 @@ namespace RevivePlayerOnTimer
                 playerStatusDictionary = new Dictionary<ulong, PlayerStatus>();
             }
         }
+
 
         // --------------------------------------------------- REVIVE CODE ---------------------------------------------------
 
@@ -240,7 +241,11 @@ namespace RevivePlayerOnTimer
             StartOfRound.Instance.UpdatePlayerVoiceEffects();
             //StartOfRound.Instance.ResetMiscValues();
         }
-
+        public static void IntermediateTest(ulong playerID)
+        {
+            Instance.mls.LogInfo("sanity check.");
+            RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
+        }
 
         // ------------------------------------------------- NETCODE PATCHER ------------------------------------------------- 
         private static void NetcodePatcher()
@@ -281,15 +286,16 @@ namespace RevivePlayerOnTimer
 
         // Sends updated player status to server and saves it in a dictionary.
         [ServerRpc(RequireOwnership = false)]
-        public void SyncPlayerStatusServerRpc(ulong playerID, bool playerIsDead)
+        public void SyncPlayerStatusServerRpc(bool playerIsDead, ServerRpcParams serverRpcParams = default)
         {
-            try
-            {
-                RevivePlayerOnTimer.playerStatusDictionary.Add(playerID, new PlayerStatus(playerID, playerIsDead));
-            }
-            catch (ArgumentException)
+            var playerID = serverRpcParams.Receive.SenderClientId;
+            if (RevivePlayerOnTimer.playerStatusDictionary.ContainsKey(playerID))
             {
                 RevivePlayerOnTimer.playerStatusDictionary[playerID] = new PlayerStatus(playerID, playerIsDead);
+            }
+            else
+            {
+                RevivePlayerOnTimer.playerStatusDictionary.Add(playerID, new PlayerStatus(playerID, playerIsDead));
             }
         }
 
@@ -338,10 +344,12 @@ namespace RevivePlayerOnTimer
             }
         }
 
+
+
         public void InitDeathTimer()
         {
             // set timer
-            double num = Math.Max(RevivePlayerOnTimer.deathTimerLength.Value, 5)*1000;
+            double num = Math.Max(RevivePlayerOnTimer.deathTimerLength.Value, 5) * 1000;
             playerDeathTimer = new System.Timers.Timer(num);
 
             // subscribe to event
@@ -358,7 +366,8 @@ namespace RevivePlayerOnTimer
             // currently this event will trigger corrently, but I fear something is wrong
             // with the scope, and calling RevivePlayerClientRpc from here, because it doesn't work.
             // However, it would appear it is called if I call it elsewhere, like from StartOfRound.StartGame... 
-            RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
+            RevivePlayerOnTimer.IntermediateTest(playerID);
+            //RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
         }
     }
 }
