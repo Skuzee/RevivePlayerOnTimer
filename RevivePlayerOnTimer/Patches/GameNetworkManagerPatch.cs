@@ -8,9 +8,14 @@ using static RevivePlayerOnTimer.RevivePlayerOnTimer;
 namespace RevivePlayerOnTimer.Patches
 {
 
+    // Creates a Network Hander, registers it to the network, and spawns it at StartOfRound.Awake
+
     [HarmonyPatch]
     public class GameNetworkManagerPatch
     {
+        static GameObject networkPrefab;
+
+
         [HarmonyPostfix, HarmonyPatch(typeof(GameNetworkManager), nameof(GameNetworkManager.Start))]
         public static void Init()
         {
@@ -21,7 +26,10 @@ namespace RevivePlayerOnTimer.Patches
             networkPrefab.AddComponent<RPOTNetworkHandler>();
 
             NetworkManager.Singleton.AddNetworkPrefab(networkPrefab);
+
+            RevivePlayerOnTimer.renewDictionary();
         }
+
 
         [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.Awake))]
         static void SpawnNetworkHandler()
@@ -34,34 +42,7 @@ namespace RevivePlayerOnTimer.Patches
                 var networkHandlerHost = Object.Instantiate(networkPrefab, Vector3.zero, Quaternion.identity);
                 networkHandlerHost.GetComponent<NetworkObject>().Spawn();
             }
-            //mls.LogInfo("subbed to network handler.");
-            //SubscribeToHandler();
         }
-        //static void SubscribeToHandler()
-        //{
-        //    RPOTNetworkHandler.LevelEvent += ReceivedEventFromServer;
-        //}
 
-        //// currently does not unsubscribe!
-        //// how to unsub when player leaves lobby?
-        //static void UnsubscribeFromHandler()
-        //{
-        //    RPOTNetworkHandler.LevelEvent -= ReceivedEventFromServer;
-        //}
-
-        //static void ReceivedEventFromServer(string eventName)
-        //{
-        //    // Event Code Here
-        //}
-
-        //static void SendEventToClients(string eventName)
-        //{
-        //    if (!(NetworkManager.Singleton.IsHost || NetworkManager.Singleton.IsServer))
-        //        return;
-
-        //    RPOTNetworkHandler.Instance.EventClientRpc(eventName);
-        //}
-
-        static GameObject networkPrefab;
     }
 }

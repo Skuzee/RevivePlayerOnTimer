@@ -16,8 +16,8 @@ namespace RevivePlayerOnTimer.Patches
         [HarmonyPostfix]
         static void KillPlayerPOST(ref ulong ___actualClientId)
         {
+            // When a player dies, send the status update to the server (confirmed working)
             RPOTNetworkHandler.Instance.SyncPlayerStatusServerRPC(___actualClientId, true);
-            //send player status to serverrpc
         }
     }
 }

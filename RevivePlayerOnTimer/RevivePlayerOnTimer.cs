@@ -3,6 +3,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using GameNetcodeStuff;
 using HarmonyLib;
+using RevivePlayerOnTimer;
 using RevivePlayerOnTimer.Patches;
 using System;
 using System.Collections.Generic;
@@ -12,19 +13,28 @@ using Unity.Netcode;
 using UnityEngine;
 using static RevivePlayerOnTimer.RevivePlayerOnTimer;
 
+/*  The current workflow: 
+    When a client dies, they send their actualClientId and playerIsDead status to the server.
+    The server creates a new instance of a class PlayerStatus and saves it in a dictionary.
+    When a new PlayerStatus is intitialized/updated, a DeathTimer is started.
+    When the unity timer is complete, it calls DeathTimerEVENT which calls RevivePlayerClientRPC
+    ^ I'm sorry if this workflow is weird or obscure. I'm open to suggestions.
+    
+    Current issue: calling RevivePlayerClientRPC seems to function if I call it from somewhere like StartOfRoundPatch.StartGame,
+    but it doesn't do anything if I call it from within DeathTimerEvent. Perhaps because RPOTNetworkHandler.Instance is not correct?
+
+    Another tentative issue: I have not tested my custom ReviveDeadPlayer method yet. Still trying to get it to run on the client first.
+ */
 namespace RevivePlayerOnTimer
 {
     // ----------------------------------------------- MAIN CLASS ----------------------------------------------- 
     [BepInPlugin("Angst-RevivePlayerOnTimer", "RevivePlayerOnTimer", "1.0.0.0")]
     public class RevivePlayerOnTimer : BaseUnityPlugin
     {
-        // config
         public static ConfigEntry<int>? deathTimerLength;
-
         private readonly Harmony harmony = new Harmony("Angst-RevivePlayerOnTimer");
         private static RevivePlayerOnTimer? Instance;
         public ManualLogSource? mls;
-
         public static Dictionary<ulong, PlayerStatus> playerStatusDictionary;
 
         private void Awake()
@@ -59,7 +69,8 @@ namespace RevivePlayerOnTimer
             //harmony.PatchAll(typeof(StartOfRoundPatch));
         }
 
-        public void renewDictionary()
+        // init the dictionary, or clear it (at the beginning of a new server/game/round etc.)
+        public static void renewDictionary()
         {
             if (playerStatusDictionary != null)
             {
@@ -251,14 +262,12 @@ namespace RevivePlayerOnTimer
     }
 
 
-    // ---------------------------------- Network Handler ---------------------------------- 
+    // ------------------------------------------------- NETWORK HANDLER -------------------------------------------------  
     public class RPOTNetworkHandler : NetworkBehaviour
     {
         ManualLogSource mls;
         public override void OnNetworkSpawn()
         {
-            //LevelEvent = null;
-
             if (NetworkManager.Singleton.IsHost || NetworkManager.Singleton.IsServer)
                 Instance?.gameObject.GetComponent<NetworkObject>().Despawn();
             Instance = this;
@@ -267,20 +276,7 @@ namespace RevivePlayerOnTimer
         }
 
 
-        //[ClientRpc]
-        //public void EventClientRpc(string eventName)
-        //{
-        //    LevelEvent?.Invoke(eventName); // If the event has subscribers (does not equal null), invoke the event
-        //}
-
-        //[ServerRpc(RequireOwnership = false)]
-        //public void EventServerRPC(string eventName)
-        //{
-        //    LevelEvent?.Invoke(eventName);
-        //}
-
         // Sends updated player status to server and saves it in a dictionary.
-
 
         [ServerRpc(RequireOwnership = false)]
         public void SyncPlayerStatusServerRPC(ulong playerID, bool playerIsDead)
@@ -304,8 +300,6 @@ namespace RevivePlayerOnTimer
             // revive player
             // resync player status? might not be needed
         }
-
-        //public static event Action<String> LevelEvent;
 
         public static RPOTNetworkHandler Instance { get; private set; }
     }
@@ -360,6 +354,10 @@ namespace RevivePlayerOnTimer
 
             mls.LogInfo("Reviving player " + playerID + " at " + e.SignalTime);
             //ReviveDeadPlayer(playerID);
+
+            // currently this event will trigger corrently, but I fear something is wrong
+            // with the scope, and calling RevivePlayerClientRpc from here, because it doesn't work.
+            // However, it would appear it is called if I call it elsewhere, like from StartOfRound.StartGame... 
             RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
         }
     }
