@@ -265,7 +265,9 @@ namespace RevivePlayerOnTimer
     // ------------------------------------------------- NETWORK HANDLER -------------------------------------------------  
     public class RPOTNetworkHandler : NetworkBehaviour
     {
+        public static RPOTNetworkHandler Instance { get; private set; }
         ManualLogSource mls;
+
         public override void OnNetworkSpawn()
         {
             if (NetworkManager.Singleton.IsHost || NetworkManager.Singleton.IsServer)
@@ -273,13 +275,13 @@ namespace RevivePlayerOnTimer
             Instance = this;
 
             base.OnNetworkSpawn();
+            mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
         }
 
 
         // Sends updated player status to server and saves it in a dictionary.
-
         [ServerRpc(RequireOwnership = false)]
-        public void SyncPlayerStatusServerRPC(ulong playerID, bool playerIsDead)
+        public void SyncPlayerStatusServerRpc(ulong playerID, bool playerIsDead)
         {
             try
             {
@@ -291,17 +293,16 @@ namespace RevivePlayerOnTimer
             }
         }
 
+
         [ClientRpc]
         public void RevivePlayerClientRpc(ulong playerID)
         {
-            mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
+
             mls.LogInfo("RevivePlayerClientRpc Command Received: " + playerID + " revived????");
             ReviveDeadPlayer(playerID);
             // revive player
             // resync player status? might not be needed
         }
-
-        public static RPOTNetworkHandler Instance { get; private set; }
     }
 
 
@@ -309,7 +310,6 @@ namespace RevivePlayerOnTimer
     {
         public ulong playerID { get; set; } = 0;
         public bool playerIsDead { get; set; } = false;
-
         public static System.Timers.Timer playerDeathTimer;
         ManualLogSource mls;
 

@@ -17,7 +17,7 @@ namespace RevivePlayerOnTimer.Patches
         static void KillPlayerPOST(ref ulong ___actualClientId)
         {
             // When a player dies, send the status update to the server (confirmed working)
-            RPOTNetworkHandler.Instance.SyncPlayerStatusServerRPC(___actualClientId, true);
+            RPOTNetworkHandler.Instance.SyncPlayerStatusServerRpc(___actualClientId, true);
         }
     }
 }
