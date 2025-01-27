@@ -34,7 +34,7 @@ namespace RevivePlayerOnTimer
         public static ConfigEntry<int>? deathTimerLength;
         private readonly Harmony harmony = new Harmony("Angst-RevivePlayerOnTimer");
         public static RevivePlayerOnTimer? Instance;
-        public ManualLogSource? mls;
+        public static ManualLogSource mls;
         public static Dictionary<ulong, PlayerStatus> playerStatusDictionary;
 
         private void Awake()
@@ -66,7 +66,7 @@ namespace RevivePlayerOnTimer
             harmony.PatchAll(typeof(RevivePlayerOnTimer));
             harmony.PatchAll(typeof(GameNetcodeStuffPatch));
             harmony.PatchAll(typeof(GameNetworkManagerPatch));
-            //harmony.PatchAll(typeof(StartOfRoundPatch));
+            harmony.PatchAll(typeof(RPOTNetworkHandlerPatch));
         }
 
         // init the dictionary, or clear it (at the beginning of a new server/game/round etc.)
@@ -87,7 +87,7 @@ namespace RevivePlayerOnTimer
 
         public static void ReviveDeadPlayer(ulong playerID)
         {
-            ManualLogSource mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
+            mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
 
 
             StartOfRound.Instance.allPlayersDead = false;
@@ -241,11 +241,7 @@ namespace RevivePlayerOnTimer
             StartOfRound.Instance.UpdatePlayerVoiceEffects();
             //StartOfRound.Instance.ResetMiscValues();
         }
-        public static void IntermediateTest(ulong playerID)
-        {
-            Instance.mls.LogInfo("sanity check.");
-            RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
-        }
+
 
         // ------------------------------------------------- NETCODE PATCHER ------------------------------------------------- 
         private static void NetcodePatcher()
@@ -271,7 +267,7 @@ namespace RevivePlayerOnTimer
     public class RPOTNetworkHandler : NetworkBehaviour
     {
         public static RPOTNetworkHandler Instance { get; private set; }
-        ManualLogSource mls;
+        public static ManualLogSource mls;
 
         public override void OnNetworkSpawn()
         {
@@ -303,9 +299,10 @@ namespace RevivePlayerOnTimer
         [ClientRpc]
         public void RevivePlayerClientRpc(ulong playerID)
         {
-
-            mls.LogInfo("RevivePlayerClientRpc Command Received: " + playerID + " revived????");
-            ReviveDeadPlayer(playerID);
+            //ManualLogSource mymls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
+            mls.LogInfo("finally here!");
+            //mls.LogInfo("RevivePlayerClientRpc Command Received: " + playerID + " revived????");
+            //ReviveDeadPlayer(playerID);
             // revive player
             // resync player status? might not be needed
         }
@@ -316,7 +313,7 @@ namespace RevivePlayerOnTimer
     {
         public ulong playerID { get; set; } = 0;
         public bool playerIsDead { get; set; } = false;
-        public static System.Timers.Timer playerDeathTimer;
+        public System.Timers.Timer playerDeathTimer;
         ManualLogSource mls;
 
 
@@ -330,7 +327,6 @@ namespace RevivePlayerOnTimer
             if (playerIsDead)
             {
                 mls.LogInfo("Starting Timer for player " + playerID);
-
                 InitDeathTimer();
                 playerDeathTimer.Start();
             }
@@ -343,8 +339,6 @@ namespace RevivePlayerOnTimer
                 playerDeathTimer.Dispose();
             }
         }
-
-
 
         public void InitDeathTimer()
         {
@@ -359,15 +353,22 @@ namespace RevivePlayerOnTimer
 
         private void DeathTimerEVENT(System.Object source, ElapsedEventArgs e)
         {
+            try
+            {
+                //ReviveDeadPlayer(playerID);
 
-            mls.LogInfo("Reviving player " + playerID + " at " + e.SignalTime);
-            //ReviveDeadPlayer(playerID);
-
-            // currently this event will trigger corrently, but I fear something is wrong
-            // with the scope, and calling RevivePlayerClientRpc from here, because it doesn't work.
-            // However, it would appear it is called if I call it elsewhere, like from StartOfRound.StartGame... 
-            RevivePlayerOnTimer.IntermediateTest(playerID);
-            //RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
+                // currently this event will trigger corrently, but I fear something is wrong
+                // with the scope, and calling RevivePlayerClientRpc from here, because it doesn't work.
+                // However, it would appear it is called if I call it elsewhere, like from StartOfRound.StartGame... 
+                //mls.LogInfo("Reviving player " + playerID + " at " + e.SignalTime);
+                //RevivePlayerOnTimer.Instance.IntermediateTest(playerID);
+                RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
+            }
+            catch (Exception err)
+            {
+                mls.LogError("Something went wrong");
+                mls.LogError(err.Message);
+            }
         }
     }
 }
