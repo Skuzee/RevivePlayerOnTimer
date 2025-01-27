@@ -6,6 +6,7 @@ using HarmonyLib;
 using RevivePlayerOnTimer;
 using RevivePlayerOnTimer.Patches;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Timers;
@@ -309,12 +310,12 @@ namespace RevivePlayerOnTimer
     }
 
 
-    public class PlayerStatus
+    public class PlayerStatus : MonoBehaviour
     {
         public ulong playerID { get; set; } = 0;
         public bool playerIsDead { get; set; } = false;
-        public System.Timers.Timer playerDeathTimer;
-        ManualLogSource mls;
+        private IEnumerator deathTimerCoroutine;
+        static ManualLogSource mls;
 
 
         public PlayerStatus(ulong id, bool pid)
@@ -322,53 +323,32 @@ namespace RevivePlayerOnTimer
             mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
             playerID = id;
             playerIsDead = pid;
-            mls.LogInfo("A PlayerStatus was initialized with ID: " + playerID);
+            deathTimerCoroutine = DeathTimerCoroutine();
+
+            mls.LogInfo("Player " + playerID + " status updated " + (playerIsDead ? "(they're dead)" : "(they're alive)"));
 
             if (playerIsDead)
             {
-                mls.LogInfo("Starting Timer for player " + playerID);
-                InitDeathTimer();
-                playerDeathTimer.Start();
-            }
-            else
-            {
-                if (playerDeathTimer == null)
-                { return; }
-
-                playerDeathTimer.Stop();
-                playerDeathTimer.Dispose();
+                mls.LogInfo("Player " + playerID + " death timer started");
+                StartCoroutine(deathTimerCoroutine);
             }
         }
-
-        public void InitDeathTimer()
+        private IEnumerator DeathTimerCoroutine()
         {
-            // set timer
-            double num = Math.Max(RevivePlayerOnTimer.deathTimerLength.Value, 5) * 1000;
-            playerDeathTimer = new System.Timers.Timer(num);
+            float timerLength = Math.Max(RevivePlayerOnTimer.deathTimerLength.Value, 5);
+            yield return new WaitForSeconds(timerLength);
 
-            // subscribe to event
-            playerDeathTimer.Elapsed += DeathTimerEVENT;
-            playerDeathTimer.AutoReset = false;
-        }
+            //mls.LogInfo("Player " + playerID + " death timer finished");
 
-        private void DeathTimerEVENT(System.Object source, ElapsedEventArgs e)
-        {
-            try
-            {
-                //ReviveDeadPlayer(playerID);
-
-                // currently this event will trigger corrently, but I fear something is wrong
-                // with the scope, and calling RevivePlayerClientRpc from here, because it doesn't work.
-                // However, it would appear it is called if I call it elsewhere, like from StartOfRound.StartGame... 
-                //mls.LogInfo("Reviving player " + playerID + " at " + e.SignalTime);
-                //RevivePlayerOnTimer.Instance.IntermediateTest(playerID);
-                RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
-            }
-            catch (Exception err)
-            {
-                mls.LogError("Something went wrong");
-                mls.LogError(err.Message);
-            }
+            //try
+            //{
+            //    RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
+            //}
+            //catch (Exception err)
+            //{
+            //    mls.LogError("error on network handler");
+            //    mls.LogError(err);
+            //}
         }
     }
 }
