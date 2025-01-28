@@ -1,4 +1,5 @@
 ﻿using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using GameNetcodeStuff;
@@ -8,6 +9,7 @@ using RevivePlayerOnTimer.Patches;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Timers;
 using Unity.Netcode;
@@ -30,9 +32,15 @@ namespace RevivePlayerOnTimer
 {
     // ----------------------------------------------- MAIN CLASS ----------------------------------------------- 
     [BepInPlugin("Angst-RevivePlayerOnTimer", "RevivePlayerOnTimer", "1.0.0.0")]
+    [BepInDependency("Angst-ScalingDailyQuota", BepInDependency.DependencyFlags.SoftDependency)]
+
     public class RevivePlayerOnTimer : BaseUnityPlugin
     {
         public static ConfigEntry<int>? deathTimerLength;
+        public static ConfigEntry<bool>? timerReviveIncreasesQuota;
+        public static ConfigEntry<int>? reviveQuotaPentaltyAmount;
+
+        public static bool flagScalingDailyQuotaInstalled = false;
         private readonly Harmony harmony = new Harmony("Angst-RevivePlayerOnTimer");
         public static RevivePlayerOnTimer? Instance;
         public static ManualLogSource mls;
@@ -45,9 +53,15 @@ namespace RevivePlayerOnTimer
                 Instance = this;
             }
 
-            NetcodePatcher(); // ONLY RUN ONCE
+            // logger
+            mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
+            mls.LogInfo("Robot is online.");
+            mls.LogInfo("Reviewing primary directives...");
 
+            NetcodePatcher(); // ONLY RUN ONCE
             renewDictionary();
+            // check for soft dependency
+            flagScalingDailyQuotaInstalled = CheckForSoftDependencies("Angst-ScalingDailyQuota");
 
             // config
             deathTimerLength =
@@ -58,16 +72,47 @@ namespace RevivePlayerOnTimer
             "Time until player is automatically revived."
             );
 
-            // logger
-            mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
-            mls.LogInfo("Robot is online.");
-            mls.LogInfo("Reviewing primary directives...");
+            timerReviveIncreasesQuota =
+            base.Config.Bind(
+            "Angst",
+            "Timer Revive Increases Quota?",
+            false,
+            "If true. The quota will increase by a set penaly amount when a player is revived. REQUIRES Angst-ScalingDailyQuota to sync quota values between client."
+            );
+
+            reviveQuotaPentaltyAmount =
+            base.Config.Bind(
+            "Angst",
+            "Quota Penalty Increase Amount",
+            100,
+            "The quota will increase by this amount when a player is revived. REQUIRES Angst-ScalingDailyQuota"
+            );
+
+
+
+
 
             // patches
             harmony.PatchAll(typeof(RevivePlayerOnTimer));
             harmony.PatchAll(typeof(GameNetcodeStuffPatch));
             harmony.PatchAll(typeof(GameNetworkManagerPatch));
             harmony.PatchAll(typeof(RPOTNetworkHandlerPatch));
+        }
+
+        // check for soft dependency Angst-ScalingDailyQuota
+        private static bool CheckForSoftDependencies(string pluginGUID)
+        {
+            foreach (var plugin in Chainloader.PluginInfos.Values)
+            {
+
+                if (plugin.Metadata.GUID == pluginGUID)
+                {
+                    mls.LogInfo("Angst-ScalingDailyQuota mod found!");
+                    return true;
+                }
+            }
+            mls.LogWarning("Angst-ScalingDailyQuota mod NOT found! Some features may not work");
+            return false;
         }
 
         // init the dictionary, or clear it (at the beginning of a new server/game/round etc.)
@@ -90,104 +135,106 @@ namespace RevivePlayerOnTimer
         {
             mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
 
-
+            PlayerControllerB pl; // = StartOfRound.Instance.allPlayerScripts.SingleOrDefault(PlayerControllerB => PlayerControllerB.actualClientId == playerID);
             StartOfRound.Instance.allPlayersDead = false;
 
             for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++)
             {
+                pl = StartOfRound.Instance.allPlayerScripts[i];
+
                 //Debug.Log("Reviving players A");
-                StartOfRound.Instance.allPlayerScripts[i].ResetPlayerBloodObjects(StartOfRound.Instance.allPlayerScripts[i].isPlayerDead);
-                if (StartOfRound.Instance.allPlayerScripts[i].actualClientId != playerID || (!StartOfRound.Instance.allPlayerScripts[i].isPlayerDead && !StartOfRound.Instance.allPlayerScripts[i].isPlayerControlled))
+                pl.ResetPlayerBloodObjects(pl.isPlayerDead);
+                if (pl.actualClientId != playerID || (!pl.isPlayerDead && !pl.isPlayerControlled))
                 {
-                    mls.LogInfo("Skipping player " + i + " revive.");
+                    mls.LogInfo("Skipping uncontrollerd player " + i);
                     continue;
                 }
-                StartOfRound.Instance.allPlayerScripts[i].isClimbingLadder = false;
-                StartOfRound.Instance.allPlayerScripts[i].clampLooking = false;
-                StartOfRound.Instance.allPlayerScripts[i].inVehicleAnimation = false;
-                StartOfRound.Instance.allPlayerScripts[i].disableMoveInput = false;
-                StartOfRound.Instance.allPlayerScripts[i].ResetZAndXRotation();
-                StartOfRound.Instance.allPlayerScripts[i].thisController.enabled = true;
-                StartOfRound.Instance.allPlayerScripts[i].health = 100;
-                StartOfRound.Instance.allPlayerScripts[i].hasBeenCriticallyInjured = false;
-                StartOfRound.Instance.allPlayerScripts[i].disableLookInput = false;
-                StartOfRound.Instance.allPlayerScripts[i].disableInteract = false;
+                pl.isClimbingLadder = false;
+                pl.clampLooking = false;
+                pl.inVehicleAnimation = false;
+                pl.disableMoveInput = false;
+                pl.ResetZAndXRotation();
+                pl.thisController.enabled = true;
+                pl.health = 100;
+                pl.hasBeenCriticallyInjured = false;
+                pl.disableLookInput = false;
+                pl.disableInteract = false;
                 //Debug.Log("Reviving players B");
-                if (StartOfRound.Instance.allPlayerScripts[i].isPlayerDead)
+                if (pl.isPlayerDead)
                 {
-                    StartOfRound.Instance.allPlayerScripts[i].isPlayerDead = false;
+                    pl.isPlayerDead = false;
                     //sync player status here?
-                    StartOfRound.Instance.allPlayerScripts[i].isPlayerControlled = true;
-                    StartOfRound.Instance.allPlayerScripts[i].isInElevator = true;
-                    StartOfRound.Instance.allPlayerScripts[i].isInHangarShipRoom = true;
-                    StartOfRound.Instance.allPlayerScripts[i].isInsideFactory = false;
-                    StartOfRound.Instance.allPlayerScripts[i].parentedToElevatorLastFrame = false;
-                    StartOfRound.Instance.allPlayerScripts[i].overrideGameOverSpectatePivot = null;
+                    pl.isPlayerControlled = true;
+                    pl.isInElevator = true;
+                    pl.isInHangarShipRoom = true;
+                    pl.isInsideFactory = false;
+                    pl.parentedToElevatorLastFrame = false;
+                    pl.overrideGameOverSpectatePivot = null;
                     StartOfRound.Instance.SetPlayerObjectExtrapolate(enable: false);
-                    StartOfRound.Instance.allPlayerScripts[i].TeleportPlayer(StartOfRound.Instance.GetPlayerSpawnPosition(i));
-                    StartOfRound.Instance.allPlayerScripts[i].setPositionOfDeadPlayer = false;
-                    StartOfRound.Instance.allPlayerScripts[i].DisablePlayerModel(StartOfRound.Instance.allPlayerObjects[i], enable: true, disableLocalArms: true);
-                    StartOfRound.Instance.allPlayerScripts[i].helmetLight.enabled = false;
+                    pl.TeleportPlayer(StartOfRound.Instance.GetPlayerSpawnPosition(i));
+                    pl.setPositionOfDeadPlayer = false;
+                    pl.DisablePlayerModel(StartOfRound.Instance.allPlayerObjects[i], enable: true, disableLocalArms: true);
+                    pl.helmetLight.enabled = false;
                     //Debug.Log("Reviving players C");
-                    StartOfRound.Instance.allPlayerScripts[i].Crouch(crouch: false);
-                    StartOfRound.Instance.allPlayerScripts[i].criticallyInjured = false;
-                    if (StartOfRound.Instance.allPlayerScripts[i].playerBodyAnimator != null)
+                    pl.Crouch(crouch: false);
+                    pl.criticallyInjured = false;
+                    if (pl.playerBodyAnimator != null)
                     {
-                        StartOfRound.Instance.allPlayerScripts[i].playerBodyAnimator.SetBool("Limp", value: false);
+                        pl.playerBodyAnimator.SetBool("Limp", value: false);
                     }
-                    StartOfRound.Instance.allPlayerScripts[i].bleedingHeavily = false;
-                    StartOfRound.Instance.allPlayerScripts[i].activatingItem = false;
-                    StartOfRound.Instance.allPlayerScripts[i].twoHanded = false;
-                    StartOfRound.Instance.allPlayerScripts[i].inShockingMinigame = false;
-                    StartOfRound.Instance.allPlayerScripts[i].inSpecialInteractAnimation = false;
-                    StartOfRound.Instance.allPlayerScripts[i].freeRotationInInteractAnimation = false;
-                    StartOfRound.Instance.allPlayerScripts[i].disableSyncInAnimation = false;
-                    StartOfRound.Instance.allPlayerScripts[i].inAnimationWithEnemy = null;
-                    StartOfRound.Instance.allPlayerScripts[i].holdingWalkieTalkie = false;
-                    StartOfRound.Instance.allPlayerScripts[i].speakingToWalkieTalkie = false;
+                    pl.bleedingHeavily = false;
+                    pl.activatingItem = false;
+                    pl.twoHanded = false;
+                    pl.inShockingMinigame = false;
+                    pl.inSpecialInteractAnimation = false;
+                    pl.freeRotationInInteractAnimation = false;
+                    pl.disableSyncInAnimation = false;
+                    pl.inAnimationWithEnemy = null;
+                    pl.holdingWalkieTalkie = false;
+                    pl.speakingToWalkieTalkie = false;
                     //Debug.Log("Reviving players D");
-                    StartOfRound.Instance.allPlayerScripts[i].isSinking = false;
-                    StartOfRound.Instance.allPlayerScripts[i].isUnderwater = false;
-                    StartOfRound.Instance.allPlayerScripts[i].sinkingValue = 0f;
-                    StartOfRound.Instance.allPlayerScripts[i].statusEffectAudio.Stop();
-                    StartOfRound.Instance.allPlayerScripts[i].DisableJetpackControlsLocally();
-                    StartOfRound.Instance.allPlayerScripts[i].health = 100;
+                    pl.isSinking = false;
+                    pl.isUnderwater = false;
+                    pl.sinkingValue = 0f;
+                    pl.statusEffectAudio.Stop();
+                    pl.DisableJetpackControlsLocally();
+                    pl.health = 100;
                     //Debug.Log("Reviving players E");
-                    StartOfRound.Instance.allPlayerScripts[i].mapRadarDotAnimator.SetBool("dead", value: false);
-                    StartOfRound.Instance.allPlayerScripts[i].externalForceAutoFade = UnityEngine.Vector3.zero;
-                    if (StartOfRound.Instance.allPlayerScripts[i].IsOwner)
+                    pl.mapRadarDotAnimator.SetBool("dead", value: false);
+                    pl.externalForceAutoFade = UnityEngine.Vector3.zero;
+                    if (pl.IsOwner)
                     {
                         HUDManager.Instance.gasHelmetAnimator.SetBool("gasEmitting", value: false);
-                        StartOfRound.Instance.allPlayerScripts[i].hasBegunSpectating = false;
+                        pl.hasBegunSpectating = false;
                         HUDManager.Instance.RemoveSpectateUI();
                         HUDManager.Instance.gameOverAnimator.SetTrigger("revive");
-                        StartOfRound.Instance.allPlayerScripts[i].hinderedMultiplier = 1f;
-                        StartOfRound.Instance.allPlayerScripts[i].isMovementHindered = 0;
-                        StartOfRound.Instance.allPlayerScripts[i].sourcesCausingSinking = 0;
+                        pl.hinderedMultiplier = 1f;
+                        pl.isMovementHindered = 0;
+                        pl.sourcesCausingSinking = 0;
                         //Debug.Log("Reviving players E2");
-                        StartOfRound.Instance.allPlayerScripts[i].reverbPreset = StartOfRound.Instance.shipReverb;
+                        pl.reverbPreset = StartOfRound.Instance.shipReverb;
                     }
                 }
                 //Debug.Log("Reviving players F");
                 SoundManager.Instance.earsRingingTimer = 0f;
-                StartOfRound.Instance.allPlayerScripts[i].voiceMuffledByEnemy = false;
+                pl.voiceMuffledByEnemy = false;
                 SoundManager.Instance.playerVoicePitchTargets[i] = 1f;
                 SoundManager.Instance.SetPlayerPitch(1f, i);
-                if (StartOfRound.Instance.allPlayerScripts[i].currentVoiceChatIngameSettings == null)
+                if (pl.currentVoiceChatIngameSettings == null)
                 {
                     StartOfRound.Instance.RefreshPlayerVoicePlaybackObjects();
                 }
-                if (StartOfRound.Instance.allPlayerScripts[i].currentVoiceChatIngameSettings != null)
+                if (pl.currentVoiceChatIngameSettings != null)
                 {
-                    if (StartOfRound.Instance.allPlayerScripts[i].currentVoiceChatIngameSettings.voiceAudio == null)
+                    if (pl.currentVoiceChatIngameSettings.voiceAudio == null)
                     {
-                        StartOfRound.Instance.allPlayerScripts[i].currentVoiceChatIngameSettings.InitializeComponents();
+                        pl.currentVoiceChatIngameSettings.InitializeComponents();
                     }
-                    if (StartOfRound.Instance.allPlayerScripts[i].currentVoiceChatIngameSettings.voiceAudio == null)
+                    if (pl.currentVoiceChatIngameSettings.voiceAudio == null)
                     {
                         return;
                     }
-                    StartOfRound.Instance.allPlayerScripts[i].currentVoiceChatIngameSettings.voiceAudio.GetComponent<OccludeAudio>().overridingLowPass = false;
+                    pl.currentVoiceChatIngameSettings.voiceAudio.GetComponent<OccludeAudio>().overridingLowPass = false;
                 }
                 //Debug.Log("Reviving players G");
             }
@@ -203,7 +250,9 @@ namespace RevivePlayerOnTimer
             StartOfRound.Instance.SetSpectateCameraToGameOverMode(enableGameOver: false, playerControllerB);
 
             // delete the dead ragdoll if it belongs to the player.
+            // idea, consider not deleting the ragdolls and make them worth a rebate if return to the company.
             RagdollGrabbableObject[] array = UnityEngine.Object.FindObjectsOfType<RagdollGrabbableObject>();
+
             for (int j = 0; j < array.Length; j++)
             {
                 if (array[j].ragdoll.playerScript.actualClientId != playerID)
@@ -300,24 +349,21 @@ namespace RevivePlayerOnTimer
         [ClientRpc]
         public void RevivePlayerClientRpc(ulong playerID)
         {
-            //ManualLogSource mymls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
-            mls.LogInfo("finally here!");
-            //mls.LogInfo("RevivePlayerClientRpc Command Received: " + playerID + " revived????");
-            //ReviveDeadPlayer(playerID);
+            mls.LogInfo("Player " + playerID + " revived");
+            ReviveDeadPlayer(playerID);
             // revive player
             // resync player status? might not be needed
         }
     }
 
 
-    public class PlayerStatus : MonoBehaviour
+    public class PlayerStatus
     {
         public ulong playerID { get; set; } = 0;
         public bool playerIsDead { get; set; } = false;
         private IEnumerator deathTimerCoroutine;
         static ManualLogSource mls;
-
-
+        
         public PlayerStatus(ulong id, bool pid)
         {
             mls = BepInEx.Logging.Logger.CreateLogSource("Angst-RevivePlayerOnTimer");
@@ -330,25 +376,45 @@ namespace RevivePlayerOnTimer
             if (playerIsDead)
             {
                 mls.LogInfo("Player " + playerID + " death timer started");
-                StartCoroutine(deathTimerCoroutine);
+
+                // find which instance in allPlayerScripts contains the correct player, and start a coroutine
+                PlayerControllerB pl = StartOfRound.Instance.allPlayerScripts.SingleOrDefault(PlayerControllerB => PlayerControllerB.actualClientId == playerID);
+                pl.StartCoroutine(deathTimerCoroutine);
             }
+        }
+
+        private static void SoftDependatCode()
+        {
+            var newQuota = TimeOfDay.Instance.profitQuota - reviveQuotaPentaltyAmount.Value;
+            ScalingDailyQuota.ScalingDailyQuota.SDQNetworkHandler.Instance.SyncDailyQuotaClientRPC(1, 1, 1, 1);
         }
         private IEnumerator DeathTimerCoroutine()
         {
             float timerLength = Math.Max(RevivePlayerOnTimer.deathTimerLength.Value, 5);
             yield return new WaitForSeconds(timerLength);
 
-            //mls.LogInfo("Player " + playerID + " death timer finished");
+            mls.LogInfo("Player " + playerID + " death timer finished");
 
-            //try
-            //{
-            //    RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
-            //}
-            //catch (Exception err)
-            //{
-            //    mls.LogError("error on network handler");
-            //    mls.LogError(err);
-            //}
+            if (flagScalingDailyQuotaInstalled && timerReviveIncreasesQuota.Value) { SoftDependatCode(); }
+            else
+            {
+                mls.LogError("Please install the missing mod \"Angst-ScalingDailyQuota\" if you wish to increment the quota when a player is revived.");
+                mls.LogError("...LINK TO MOD TBD...");
+            }
+
+            try
+            {
+                RPOTNetworkHandler.Instance.RevivePlayerClientRpc(playerID);
+            }
+            catch (Exception err)
+            {
+                mls.LogError("error on network handler");
+                mls.LogError(err);
+            }
+            finally
+            {
+                ReviveDeadPlayer(playerID);
+            }
         }
     }
 }

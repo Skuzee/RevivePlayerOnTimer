@@ -22,6 +22,9 @@
     <Reference Include="BepInEx">
       <HintPath>C:\Users\1337\AppData\Roaming\r2modmanPlus-local\LethalCompany\profiles\Deeper Dungeons\BepInEx\core\BepInEx.dll</HintPath>
     </Reference>
+    <Reference Include="ScalingDailyQuota">
+      <HintPath>..\..\ScalingDailyQuota\ScalingDailyQuota\bin\Debug\netstandard2.1\ScalingDailyQuota.dll</HintPath>
+    </Reference>
     <Reference Include="Unity.Netcode.Runtime" Publicize="true">
       <HintPath>..\..\..\..\SteamLibrary\steamapps\common\Lethal Company\Lethal Company_Data\Managed\Unity.Netcode.Runtime.dll</HintPath>
     </Reference>
